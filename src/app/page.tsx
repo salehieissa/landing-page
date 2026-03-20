@@ -15,11 +15,11 @@ import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button
 
 const FRAME_COUNT = 119;
 const getFramePath = (index: number) =>
-  `/frames-clean/frame-${String(index + 1).padStart(3, "0")}.png`;
+  `/frames-clean/frame-${String(index + 1).padStart(3, "0")}.webp`;
 
 const PRESET_FRAME_COUNT = 121;
 const getPresetFramePath = (index: number) =>
-  `/frames-presets/frame-${String(index + 1).padStart(3, "0")}.png`;
+  `/frames-presets/frame-${String(index + 1).padStart(3, "0")}.webp`;
 
 function useSmooth(value: MotionValue<number>) {
   return useSpring(value, { stiffness: 60, damping: 25, mass: 0.8 });

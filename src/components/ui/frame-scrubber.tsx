@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 
 interface FrameScrubberProps {
   frameCount: number;
@@ -17,33 +17,66 @@ export default function FrameScrubber({
 }: FrameScrubberProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const imagesRef = useRef<HTMLImageElement[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const imagesRef = useRef<(HTMLImageElement | null)[]>([]);
+  const loadedSetRef = useRef<Set<number>>(new Set());
+  const [firstReady, setFirstReady] = useState(false);
   const currentFrameRef = useRef(-1);
   const sizeRef = useRef({ w: 0, h: 0 });
+  const rafRef = useRef<number>(0);
+
+  const paths = useMemo(
+    () => Array.from({ length: frameCount }, (_, i) => framePath(i)),
+    [frameCount, framePath]
+  );
 
   useEffect(() => {
     let cancelled = false;
-    const images: HTMLImageElement[] = [];
-    let loadedCount = 0;
+    const images: (HTMLImageElement | null)[] = new Array(frameCount).fill(null);
+    const loaded = new Set<number>();
+    imagesRef.current = images;
+    loadedSetRef.current = loaded;
 
-    for (let i = 0; i < frameCount; i++) {
+    const loadImage = (i: number) => {
+      if (cancelled) return;
       const img = new Image();
-      img.src = framePath(i);
+      if (i === 0) {
+        (img as HTMLImageElement & { fetchPriority: string }).fetchPriority = "high";
+        img.decoding = "sync";
+      } else {
+        img.decoding = "async";
+      }
+      img.src = paths[i];
       img.onload = () => {
-        loadedCount++;
-        if (!cancelled && loadedCount === frameCount) {
-          imagesRef.current = images;
-          setLoaded(true);
-        }
+        if (cancelled) return;
+        images[i] = img;
+        loaded.add(i);
+        if (i === 0) setFirstReady(true);
       };
-      images.push(img);
-    }
+    };
+
+    loadImage(0);
+
+    const BATCH = 6;
+    let nextIndex = 1;
+    const loadBatch = () => {
+      if (cancelled || nextIndex >= frameCount) return;
+      const end = Math.min(nextIndex + BATCH, frameCount);
+      for (let i = nextIndex; i < end; i++) loadImage(i);
+      nextIndex = end;
+      if (nextIndex < frameCount) {
+        requestIdleCallback ? requestIdleCallback(loadBatch) : setTimeout(loadBatch, 0);
+      }
+    };
+
+    const kickoff = () => {
+      if (!cancelled) loadBatch();
+    };
+    requestIdleCallback ? requestIdleCallback(kickoff) : setTimeout(kickoff, 16);
 
     return () => {
       cancelled = true;
     };
-  }, [frameCount, framePath]);
+  }, [frameCount, paths]);
 
   const syncSize = useCallback(() => {
     const container = containerRef.current;
@@ -73,9 +106,17 @@ export default function FrameScrubber({
     (index: number) => {
       const canvas = canvasRef.current;
       const images = imagesRef.current;
-      if (!canvas || !images.length || index === currentFrameRef.current) return;
+      if (!canvas || index === currentFrameRef.current) return;
 
-      const img = images[index];
+      let img = images[index];
+      if (!img || !img.complete) {
+        for (let offset = 1; offset < 5; offset++) {
+          const below = images[index - offset];
+          if (below?.complete) { img = below; break; }
+          const above = images[index + offset];
+          if (above?.complete) { img = above; break; }
+        }
+      }
       if (!img || !img.complete) return;
 
       const ctx = canvas.getContext("2d");
@@ -102,22 +143,23 @@ export default function FrameScrubber({
   );
 
   useEffect(() => {
-    if (!loaded) return;
+    if (!firstReady) return;
     const frameIndex = Math.min(
       Math.floor(scrollProgress * frameCount),
       frameCount - 1
     );
-    drawFrame(Math.max(0, frameIndex));
-  }, [scrollProgress, loaded, frameCount, drawFrame]);
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => drawFrame(Math.max(0, frameIndex)));
+  }, [scrollProgress, firstReady, frameCount, drawFrame]);
 
   useEffect(() => {
-    if (loaded) drawFrame(0);
-  }, [loaded, drawFrame]);
+    if (firstReady) drawFrame(0);
+  }, [firstReady, drawFrame]);
 
   return (
     <div
       ref={containerRef}
-      className={`${className} ${loaded ? "opacity-100" : "opacity-0"} transition-opacity duration-300`}
+      className={`${className} ${firstReady ? "opacity-100" : "opacity-0"} transition-opacity duration-300`}
       style={{ width: "100%", height: "100%", overflow: "hidden" }}
     >
       <canvas ref={canvasRef} style={{ display: "block" }} />
