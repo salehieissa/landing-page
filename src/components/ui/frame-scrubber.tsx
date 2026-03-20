@@ -2,6 +2,11 @@
 
 import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 
+const scheduleIdle =
+  typeof window !== "undefined" && typeof window.requestIdleCallback === "function"
+    ? (cb: () => void) => window.requestIdleCallback(cb)
+    : (cb: () => void) => setTimeout(cb, 1);
+
 interface FrameScrubberProps {
   frameCount: number;
   framePath: (index: number) => string;
@@ -64,14 +69,14 @@ export default function FrameScrubber({
       for (let i = nextIndex; i < end; i++) loadImage(i);
       nextIndex = end;
       if (nextIndex < frameCount) {
-        requestIdleCallback ? requestIdleCallback(loadBatch) : setTimeout(loadBatch, 0);
+        scheduleIdle(loadBatch);
       }
     };
 
     const kickoff = () => {
       if (!cancelled) loadBatch();
     };
-    requestIdleCallback ? requestIdleCallback(kickoff) : setTimeout(kickoff, 16);
+    scheduleIdle(kickoff);
 
     return () => {
       cancelled = true;
