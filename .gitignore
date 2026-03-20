@@ -36,6 +36,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+# unused frame sets and models
+/public/frames/
+/public/frames-png/
+/public/models/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
